@@ -1,0 +1,59 @@
+############################################
+# GENERAL
+############################################
+
+logLevel: info
+logDestinations: [stdout]
+logFile: mediamtx.log
+
+############################################
+# RTSP SERVER (para recibir streams)
+############################################
+
+rtsp: yes
+rtspAddress: :8554
+
+############################################
+# WEBRTC
+############################################
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigin: "*"
+
+############################################
+# HLS (opcional)
+############################################
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+
+############################################
+# RECORDING
+############################################
+
+record: yes
+recordPath: ./recordings/%path/%Y-%m-%d_%H-%M-%S
+recordFormat: fmp4
+recordPartDuration: 1s
+recordSegmentDuration: 1m
+
+############################################
+# PATHS (CÁMARAS)
+############################################
+
+paths:
+
+  cam1:
+    source: rtsp://192.168.0.130/rtsp_tunnel?profile=0
+    sourceOnDemand: no
+
+  cam2:
+    source: rtsp://192.168.0.132/rtsp_tunnel?profile=0
+    sourceOnDemand: no
+
+  # Para cámaras que se publican desde fuera
+  cam3:
+    source: publisher

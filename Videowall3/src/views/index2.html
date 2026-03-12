@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>WebRTC Camera</title>
+
+<style>
+body{
+    background:#111;
+    color:white;
+    font-family:Arial;
+}
+
+video{
+    width:600px;
+    background:black;
+}
+
+.status{
+    margin-top:5px;
+    font-size:14px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h3>Camera WebRTC Test</h3>
+
+<video id="video" autoplay playsinline muted></video>
+<div class="status" id="status">Connecting...</div>
+
+<script>
+
+const video = document.getElementById("video");
+const statusLabel = document.getElementById("status");
+
+const WHEP_URL = "http://localhost:8889/cam1/whep";
+
+let pc;
+
+async function startStream(){
+
+    statusLabel.innerText = "Connecting...";
+
+    pc = new RTCPeerConnection({
+        iceServers: []
+    });
+
+    // Solo recibimos vídeo
+    pc.addTransceiver("video",{direction:"recvonly"});
+
+    pc.ontrack = (event)=>{
+        video.srcObject = event.streams[0];
+        statusLabel.innerText = "Online";
+    };
+
+    pc.onconnectionstatechange = ()=>{
+        console.log("STATE:",pc.connectionState);
+
+        if(pc.connectionState==="failed" || pc.connectionState==="disconnected"){
+            statusLabel.innerText = "Reconnecting...";
+            reconnect();
+        }
+    };
+
+    pc.oniceconnectionstatechange = ()=>{
+        console.log("ICE:",pc.iceConnectionState);
+    };
+
+    try{
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Esperar a que termine ICE gathering
+        await waitIceGathering();
+
+        const res = await fetch(WHEP_URL,{
+            method:"POST",
+            headers:{
+                "Content-Type":"application/sdp"
+            },
+            body:pc.localDescription.sdp
+        });
+
+        if(!res.ok){
+            throw new Error("HTTP "+res.status);
+        }
+
+        const answer = await res.text();
+
+        await pc.setRemoteDescription({
+            type:"answer",
+            sdp:answer
+        });
+
+    }catch(err){
+
+        console.error(err);
+        statusLabel.innerText = "Connection error";
+
+        reconnect();
+
+    }
+
+}
+
+function waitIceGathering(){
+
+    return new Promise(resolve=>{
+
+        if(pc.iceGatheringState==="complete"){
+            resolve();
+            return;
+        }
+
+        pc.onicegatheringstatechange = ()=>{
+            if(pc.iceGatheringState==="complete"){
+                resolve();
+            }
+        };
+
+    });
+
+}
+
+function reconnect(){
+
+    setTimeout(()=>{
+
+        if(pc){
+            pc.close();
+        }
+
+        startStream();
+
+    },3000);
+
+}
+
+startStream();
+
+</script>
+
+</body>
+</html>

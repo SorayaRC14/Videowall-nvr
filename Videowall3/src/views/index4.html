@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+<meta charset="UTF-8">
+
+<title>Videowall NVR</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+<style>
+
+body{
+background:#0f172a;
+color:#e5e7eb;
+font-family:system-ui;
+overflow:hidden;
+}
+
+/* SIDEBAR */
+
+#sidebar{
+width:280px;
+background:#111827;
+height:100vh;
+border-right:1px solid #1f2937;
+}
+
+.sidebar-header{
+font-size:18px;
+font-weight:600;
+padding:18px;
+border-bottom:1px solid #1f2937;
+}
+
+.camera-card{
+background:#1f2937;
+border-radius:8px;
+padding:10px 12px;
+margin-bottom:8px;
+cursor:grab;
+transition:all .2s;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+.camera-card:hover{
+background:#374151;
+transform:translateY(-2px);
+}
+
+/* TOPBAR */
+
+.topbar{
+background:#111827;
+border-bottom:1px solid #1f2937;
+height:60px;
+display:flex;
+align-items:center;
+padding:0 20px;
+}
+
+/* VIDEOWALL */
+
+#videowall{
+display:grid;
+gap:10px;
+padding:10px;
+height:calc(100vh - 60px);
+background:#020617;
+}
+
+.slot{
+background:black;
+border-radius:10px;
+overflow:hidden;
+position:relative;
+border:1px solid #1f2937;
+}
+
+video{
+width:100%;
+height:100%;
+object-fit:cover;
+}
+
+/* OVERLAY */
+
+.overlay{
+position:absolute;
+bottom:0;
+left:0;
+right:0;
+background:linear-gradient(to top,rgba(0,0,0,.7),transparent);
+padding:6px 10px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+font-size:13px;
+}
+
+.overlay-controls button{
+background:rgba(255,255,255,.1);
+border:none;
+color:white;
+border-radius:6px;
+padding:3px 6px;
+margin-left:4px;
+}
+
+.overlay-controls button:hover{
+background:rgba(255,255,255,.25);
+}
+
+/* STATUS */
+
+.status{
+position:absolute;
+top:8px;
+right:8px;
+padding:3px 6px;
+font-size:11px;
+border-radius:4px;
+font-weight:500;
+}
+
+.online{
+background:#16a34a;
+}
+
+.offline{
+background:#dc2626;
+}
+
+/* FULLSCREEN */
+
+.fullscreen{
+position:fixed!important;
+top:0;
+left:0;
+width:100vw!important;
+height:100vh!important;
+z-index:9999;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="d-flex">
+
+<div id="sidebar">
+
+<div class="sidebar-header">
+<i class="bi bi-camera-video"></i> Cámaras
+</div>
+
+<div class="p-3" id="cameraList"></div>
+
+</div>
+
+<div class="flex-grow-1 d-flex flex-column">
+
+<div class="topbar">
+
+<div class="fw-semibold me-auto">
+Videowall
+</div>
+
+<select id="layoutSelect" class="form-select form-select-sm w-auto">
+
+<option value="1">1x1</option>
+<option value="4">2x2</option>
+<option value="6" selected>3x2</option>
+<option value="9">3x3</option>
+<option value="16">4x4</option>
+<option value="25">5x5</option>
+
+</select>
+
+</div>
+
+<div id="videowall"></div>
+
+</div>
+
+</div>
+
+<script>
+
+let cameras=[]
+let streams={}
+let layoutMemory={}
+
+// LOAD CAMERAS
+
+async function loadCameras(){
+
+const res=await fetch("http://localhost:3000/api/cameras/webrtc")
+
+cameras=await res.json()
+
+renderCameraList()
+
+}
+
+function renderCameraList(){
+
+const list=document.getElementById("cameraList")
+
+list.innerHTML=""
+
+cameras.forEach(cam=>{
+
+const div=document.createElement("div")
+
+div.className="camera-card"
+
+div.draggable=true
+
+div.innerHTML=`
+<span>${cam.name}</span>
+<i class="bi bi-camera-video"></i>
+`
+
+div.addEventListener("dragstart",e=>{
+e.dataTransfer.setData("camera",JSON.stringify(cam))
+})
+
+list.appendChild(div)
+
+})
+
+}
+
+// GRID LAYOUT
+
+function setLayout(count){
+
+const wall=document.getElementById("videowall")
+
+wall.innerHTML=""
+
+const cols=Math.ceil(Math.sqrt(count))
+
+wall.style.gridTemplateColumns=`repeat(${cols},1fr)`
+
+for(let i=0;i<count;i++){
+
+const slot=document.createElement("div")
+
+slot.className="slot"
+slot.dataset.index=i
+
+slot.addEventListener("dragover",e=>e.preventDefault())
+
+slot.addEventListener("drop",e=>{
+
+e.preventDefault()
+
+const cam=JSON.parse(e.dataTransfer.getData("camera"))
+
+attachCamera(slot,cam)
+
+})
+
+slot.addEventListener("dblclick",()=>{
+
+slot.classList.toggle("fullscreen")
+
+})
+
+wall.appendChild(slot)
+
+}
+
+restoreLayout()
+
+}
+
+// ATTACH CAMERA
+
+async function attachCamera(slot,cam){
+
+slot.innerHTML=""
+
+const video=document.createElement("video")
+
+video.autoplay=true
+video.playsInline=true
+video.muted=true
+
+slot.appendChild(video)
+
+const status=document.createElement("div")
+
+status.className="status offline"
+status.innerText="Connecting"
+
+slot.appendChild(status)
+
+if(!streams[cam.path]){
+
+await createStream(cam)
+
+}
+
+video.srcObject=streams[cam.path].media
+
+status.className="status online"
+status.innerText="Online"
+
+createOverlay(slot,cam)
+
+layoutMemory[slot.dataset.index]=cam.path
+
+saveLayout()
+
+}
+
+// CREATE STREAM
+
+async function createStream(cam){
+
+const pc=new RTCPeerConnection()
+
+pc.addTransceiver("video",{direction:"recvonly"})
+
+const media=new MediaStream()
+
+pc.ontrack=e=>{
+media.addTrack(e.track)
+}
+
+const offer=await pc.createOffer()
+
+await pc.setLocalDescription(offer)
+
+await waitIce(pc)
+
+let url=cam.webrtcUrl
+
+if(!url.endsWith("/whep")){
+url+="/whep"
+}
+
+const res=await fetch(url,{
+method:"POST",
+headers:{"Content-Type":"application/sdp"},
+body:pc.localDescription.sdp
+})
+
+const answer=await res.text()
+
+await pc.setRemoteDescription({
+type:"answer",
+sdp:answer
+})
+
+streams[cam.path]={pc,media,cam}
+
+pc.onconnectionstatechange=()=>{
+
+if(pc.connectionState==="failed" || pc.connectionState==="disconnected"){
+
+reconnect(cam)
+
+}
+
+}
+
+}
+
+function waitIce(pc){
+
+return new Promise(resolve=>{
+
+if(pc.iceGatheringState==="complete") return resolve()
+
+pc.onicegatheringstatechange=()=>{
+
+if(pc.iceGatheringState==="complete") resolve()
+
+}
+
+})
+
+}
+
+// RECONNECT
+
+function reconnect(cam){
+
+setTimeout(()=>{
+
+if(streams[cam.path]){
+
+streams[cam.path].pc.close()
+
+delete streams[cam.path]
+
+}
+
+},3000)
+
+}
+
+// OVERLAY
+
+function createOverlay(slot,cam){
+
+const overlay=document.createElement("div")
+
+overlay.className="overlay"
+
+overlay.innerHTML=`
+
+<span>${cam.name}</span>
+
+<div class="overlay-controls">
+
+<button onclick="toggleAudio('${cam.path}')">
+
+<i class="bi bi-volume-up"></i>
+
+</button>
+
+<button onclick="snapshot(this.closest('.slot').querySelector('video'))">
+
+<i class="bi bi-camera"></i>
+
+</button>
+
+</div>
+
+`
+
+slot.appendChild(overlay)
+
+}
+
+// SNAPSHOT
+
+function snapshot(video){
+
+const canvas=document.createElement("canvas")
+
+canvas.width=video.videoWidth
+canvas.height=video.videoHeight
+
+canvas.getContext("2d").drawImage(video,0,0)
+
+const link=document.createElement("a")
+
+link.href=canvas.toDataURL()
+link.download="snapshot.png"
+
+link.click()
+
+}
+
+// AUDIO
+
+function toggleAudio(path){
+
+Object.values(streams).forEach(s=>{
+s.media.getAudioTracks().forEach(t=>t.enabled=false)
+})
+
+const s=streams[path]
+
+if(!s) return
+
+s.media.getAudioTracks().forEach(t=>t.enabled=true)
+
+}
+
+// SAVE LAYOUT
+
+function saveLayout(){
+
+localStorage.setItem("videowallLayout",JSON.stringify(layoutMemory))
+
+}
+
+// RESTORE LAYOUT
+
+function restoreLayout(){
+
+const saved=localStorage.getItem("videowallLayout")
+
+if(!saved) return
+
+layoutMemory=JSON.parse(saved)
+
+Object.entries(layoutMemory).forEach(([slotIndex,path])=>{
+
+const slot=document.querySelector(`[data-index='${slotIndex}']`)
+
+const cam=cameras.find(c=>c.path===path)
+
+if(slot && cam){
+
+attachCamera(slot,cam)
+
+}
+
+})
+
+}
+
+document.getElementById("layoutSelect").addEventListener("change",e=>{
+
+const value=parseInt(e.target.value)
+
+setLayout(value)
+
+localStorage.setItem("layoutType",value)
+
+})
+
+window.onload=async()=>{
+
+await loadCameras()
+
+const savedLayout=localStorage.getItem("layoutType") || 6
+
+document.getElementById("layoutSelect").value=savedLayout
+
+setLayout(savedLayout)
+
+}
+
+</script>
+
+</body>
+</html>
