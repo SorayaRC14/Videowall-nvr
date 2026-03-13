@@ -93,7 +93,7 @@
         }
 
         .slot video {
-            transition: transform .25s ease, opacity .25s ease;
+            transition: transform .35s ease, opacity .35s ease;
         }
 
         /* OVERLAY */
@@ -236,9 +236,19 @@
         let draggingSlotIndex = null;
         let reconnectTimers = {};
         let reconnectAttempts = {};
-        let tourActive = false;
+        let tourActive = false;//timer corriendo
         let tourTimer = null;
         let tourIndex = 0;
+
+        let idleTimer = null;
+        let idleTimeout = 120000;   // 2 minutos (puedes cambiar)
+        let pausedByUser = false;
+
+        let tourMode = "layout";   // layout | group | alarm
+        let tourGroup = [];
+        let alarmQueue = [];
+
+        let tourUserEnabled = false
 
         // ---------------- LOAD CAMERAS ----------------
         async function loadCameras() {
@@ -310,6 +320,7 @@
 
         function moveOrSwap(i1, i2) {
 
+            pauseTourTemporary()//SE PARA VIDEORONDA
 
             if (i1 === i2) return
 
@@ -568,9 +579,14 @@
         }
 
         // ---------------- CONTROL ----------------
-        function zoomIn(video) { applyZoom(video, 0.2) }
+        function zoomIn(video) {
+            pauseTourTemporary()//SE PARA VIDEORONDA
+            applyZoom(video, 0.2)
+        }
 
         function zoomOut(video) {
+            pauseTourTemporary()//SE PARA VIDEORONDA
+
             let zoom = zoomLevels.get(video) || 1
             let pan = panOffsets.get(video) || { x: 0, y: 0 }
 
@@ -615,6 +631,7 @@
 
         // ---------------- PAN ----------------
         function enablePan(video) {
+            pauseTourTemporary()//SE PARA VIDEORONDA
             video.addEventListener("mousedown", e => {
                 if ((zoomLevels.get(video) || 1) <= 1) return
                 draggingVideo = video
@@ -647,6 +664,8 @@
 
         // ---------------- ZOOM WHEEL ----------------
         function zoomVideo(e, video) {
+            pauseTourTemporary()//SE PARA VIDEORONDA
+
             e.preventDefault()
 
             let rect = video.getBoundingClientRect()
@@ -670,7 +689,10 @@
         }
 
         // ---------------- FULLSCREEN / SNAPSHOT / AUDIO ----------------
-        function toggleFullscreen(slot) { slot.classList.toggle("fullscreen") }
+        function toggleFullscreen(slot) {
+            pauseTourTemporary()//SE PARA VIDEORONDA
+            slot.classList.toggle("fullscreen")
+        }
 
         function snapshot(video) {
             const canvas = document.createElement("canvas")
@@ -684,6 +706,8 @@
         }
 
         function removeCamera(slot) {
+
+            stopTourByUserAction()//SE PARA VIDEORONDA
 
             const index = slot.dataset.index
             slot.innerHTML = ""
@@ -741,35 +765,58 @@
         document.getElementById("tourBtn").addEventListener("click", toggleTour);
         function toggleTour() {
 
-            tourActive = !tourActive
-
             const btn = document.getElementById("tourBtn")
 
-            if (tourActive) {
+            if (!tourUserEnabled) {
+
+                tourUserEnabled = true
+                tourActive = true
+                pausedByUser = false
+
                 btn.classList.remove("btn-success")
                 btn.classList.add("btn-warning")
+
                 startTour()
+
             } else {
+
+                tourUserEnabled = false
+                tourActive = false
+
                 btn.classList.add("btn-success")
                 btn.classList.remove("btn-warning")
+
                 stopTour()
             }
         }
 
         function startTour() {
 
+            // MUY IMPORTANTE → evitar múltiples intervalos
+            clearInterval(tourTimer)
+
             tourTimer = setInterval(() => {
+
+                if (!tourActive) return
 
                 rotateLayout()
 
             }, 10000)
+
+            console.log("Tour START")
         }
 
         function stopTour() {
+
             clearInterval(tourTimer)
+            tourTimer = null
+
+            console.log("Tour STOP")
         }
 
         function rotateLayout() {
+
+            if (!tourActive) return;
 
             const slots = [...document.querySelectorAll(".slot")]
 
@@ -814,6 +861,82 @@
             saveLayout()
         }
 
+        document.querySelectorAll(".slot video").forEach(v => {
+            v.style.opacity = .4
+        })
+
+        setTimeout(() => {
+            document.querySelectorAll(".slot video").forEach(v => {
+                v.style.opacity = 1
+            })
+        }, 200)
+
+
+        //----------  PARADA TOUR VIDEORONDA ------------
+        function stopTourByUserAction() {
+
+            if (!tourActive) return
+
+            console.log("Tour detenido por operador")
+
+            pausedByUser = true
+            tourActive = false
+
+            stopTour()
+
+            resetIdleTimer()
+        }
+
+        //------------------------  SISTEMA DE INACTIVIDAD ------------------
+        function resetIdleTimer() {
+
+            clearTimeout(idleTimer)
+
+            idleTimer = setTimeout(() => {
+
+                if (tourUserEnabled && !tourActive && !pausedByUser) {
+
+                    console.log("Auto-resume tour")
+
+                    tourActive = true
+
+                    document.getElementById("tourBtn")
+                        .classList.replace("btn-success", "btn-warning")
+
+                    startTour()
+                }
+
+            }, idleTimeout)
+        }
+        ["mousemove", "keydown", "click", "wheel"].forEach(evt => {
+            window.addEventListener(evt, () => {
+
+                pausedByUser = false
+                resetIdleTimer()
+
+            })
+        })
+
+        //--------------------  PAUSA TEMPORAL  --------------------
+        function pauseTourTemporary(ms = 30000) {
+
+            if (!tourActive) return
+
+            console.log("Tour PAUSE TEMP")
+
+            clearInterval(tourTimer)
+
+            setTimeout(() => {
+
+                if (!pausedByUser && tourActive) {
+
+                    console.log("Tour RESUME after temp pause")
+
+                    startTour()
+                }
+
+            }, ms)
+        }
     </script>
 
 </body>
