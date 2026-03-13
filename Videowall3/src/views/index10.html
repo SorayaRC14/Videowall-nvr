@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>NVR Videowall 8</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #0f172a;
+            color: #e5e7eb;
+            overflow: hidden;
+            font-family: system-ui;
+        }
+
+        /* SIDEBAR */
+        #sidebar {
+            width: 300px;
+            min-width: 300px;
+            max-width: 300px;
+            background: #111827;
+            height: 100vh;
+            border-right: 1px solid #1f2937;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #1f2937;
+        }
+
+        .camera-card {
+            background: #1f2937;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: grab;
+            display: flex;
+            justify-content: space-between;
+            transition: .2s;
+        }
+
+        .camera-card:hover {
+            background: #374151;
+            transform: translateY(-2px);
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: transform .2s ease;
+            cursor: grab;
+        }
+
+        .cam-warning {
+            color: #facc15;
+            margin-left: 5px;
+            font-size: 14px;
+        }
+
+        .no-signal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2em;
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        /* TOPBAR */
+        .topbar {
+            height: 60px;
+            background: #111827;
+            border-bottom: 1px solid #1f2937;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 10px;
+        }
+
+        /* VIDEOWALL */
+        #videowall {
+            display: grid;
+            gap: 10px;
+            padding: 10px;
+            height: calc(100vh - 60px);
+            background: #020617;
+        }
+
+        .slot {
+            background: black;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #1f2937;
+        }
+
+        .slot video {
+            transition: transform .35s ease, opacity .35s ease;
+        }
+
+        /* OVERLAY */
+        .overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0, 0, 0, .7), transparent);
+            padding: 6px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .overlay-controls button {
+            background: rgba(255, 255, 255, .1);
+            border: none;
+            color: white;
+            border-radius: 6px;
+            padding: 4px 6px;
+            margin-left: 4px;
+        }
+
+        .overlay-controls button:hover {
+            background: rgba(255, 255, 255, .25);
+        }
+
+        /* STATUS */
+        .status {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 11px;
+            padding: 3px 6px;
+            border-radius: 4px;
+        }
+
+        .online {
+            background: #16a34a;
+        }
+
+        .offline {
+            background: #dc2626;
+        }
+
+        .fullscreen {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999;
+        }
+
+        .slot.drag-over {
+            outline: 2px solid #3b82f6;
+        }
+
+        /* Modal Joystick*/
+        .ptz-modal {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 99999;
+            display: none;
+        }
+
+        .ptz-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: rgba(20, 20, 20, .9);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            font-size: 14px;
+        }
+
+        .ptz-header button {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        #ptzVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #ptzJoystick {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 160px;
+            height: 160px;
+        }
+
+        .ptz-zoom {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ptz-zoom button {
+            width: 60px;
+            height: 60px;
+            font-size: 26px;
+            border-radius: 10px;
+            border: none;
+            background: #222;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .ptz-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .ptz-joystick {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 160px;
+            height: 160px;
+            pointer-events: auto;
+        }
+
+        .ptz-zoom-box {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        .ptz-zoom-box button {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            border: none;
+            background: rgba(20, 20, 20, .8);
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="d-flex">
+
+        <div id="sidebar">
+
+            <div class="sidebar-header">
+
+                <i class="bi bi-camera-video"></i> Cámaras
+
+                <div class="mt-2">
+                    <input id="searchCam" class="form-control form-control-sm" placeholder="Buscar cámara">
+                </div>
+
+                <div class="mt-2 small">
+                    Online: <span id="camOnline">0</span> |
+                    Offline: <span id="camOffline">0</span>
+                </div>
+
+                <div class="d-flex gap-2 mt-2">
+
+                    <select id="layoutSelect" class="form-select form-select-sm">
+
+                        <option value="1">1x1</option>
+                        <option value="4">2x2</option>
+                        <option value="6" selected>3x2</option>
+                        <option value="9">3x3</option>
+                        <option value="16">4x4</option>
+                        <option value="25">5x5</option>
+
+                    </select>
+                    <button id="tourBtn" class="btn btn-sm btn-success">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+
+                    <button class="btn btn-sm btn-danger" id="clearLayout">
+                        <i class="bi bi-trash"></i>
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div class="p-3 flex-grow-1 overflow-auto" id="cameraList"></div>
+
+        </div>
+
+        <div class="flex-grow-1 d-flex flex-column">
+
+            <div class="topbar">
+
+                <div class="fw-semibold me-auto">
+                    Videowall NVR
+                </div>
+
+
+
+            </div>
+
+            <div id="videowall"></div>
+
+        </div>
+
+        <!-- Modal -->
+        <div id="ptzModal" class="ptz-modal">
+
+            <div class="ptz-header">
+                <span id="ptzTitle"></span>
+                <button onclick="closePTZ()">✕</button>
+            </div>
+
+            <video id="ptzVideo" autoplay playsinline muted></video>
+
+            <div id="ptzJoystick"></div>
+
+            <div class="ptz-zoom">
+                <button onclick="ptzZoom(0.2)">+</button>
+                <button onclick="ptzZoom(-0.2)">−</button>
+            </div>
+
+        </div>
+        <!-- fin Modal -->
+
+    </div>
+
+    <script>
+        let cameras = [];
+        let streams = {};
+        let layoutMemory = {};
+        let zoomLevels = new Map();
+        let panOffsets = new Map();
+        let draggingVideo = null;
+        let dragStart = { x: 0, y: 0 };
+        let panStart = { x: 0, y: 0 };
+        let draggingSlotIndex = null;
+        let reconnectTimers = {};
+        let reconnectAttempts = {};
+
+        // ---------------- TOUR / VIDEORONDA ----------------
+        let tourUserEnabled = false;  // operador activó el tour manualmente
+        let tourActive = false;       // timer activo
+        let tourLocked = false;       // bloqueado por interacción
+        let pausedByUser = false;     // pausa por acción del operador
+        let tourTimer = null;
+        let idleTimer = null;
+        let idleTimeout = 120000;     // 2 min inactividad para auto-resume
+
+        // ---------------- LOAD CAMERAS ----------------
+        async function loadCameras() {
+            const res = await fetch("http://localhost:3000/api/cameras/webrtc");
+            cameras = await res.json();
+            renderCameraList();
+        }
+
+        function renderCameraList() {
+            const list = document.getElementById("cameraList");
+            list.innerHTML = "";
+            cameras.forEach(cam => {
+                const div = document.createElement("div");
+                div.className = "camera-card";
+                div.draggable = true;
+                div.innerHTML = `<span>${cam.name}</span><i class="bi bi-camera-video"></i>`;
+                div.addEventListener("dragstart", e => e.dataTransfer.setData("camera", JSON.stringify(cam)));
+                list.appendChild(div);
+            });
+        }
+
+        // ---------------- LAYOUT ----------------
+        function setLayout(count) {
+            const wall = document.getElementById("videowall");
+            wall.innerHTML = "";
+
+            const cols = Math.ceil(Math.sqrt(count));
+            wall.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+
+            for (let i = 0; i < count; i++) {
+                const slot = document.createElement("div");
+                slot.className = "slot";
+                slot.dataset.index = i;
+
+                slot.addEventListener("dragover", e => e.preventDefault());
+                slot.addEventListener("dragenter", () => slot.classList.add("drag-over"));
+                slot.addEventListener("dragleave", () => slot.classList.remove("drag-over"));
+
+                slot.addEventListener("drop", e => {
+                    e.preventDefault();
+                    slot.classList.remove("drag-over");
+                    const slotFrom = e.dataTransfer.getData("slotIndex");
+                    if (slotFrom !== "") { moveOrSwap(slotFrom, slot.dataset.index); return; }
+
+                    const cam = JSON.parse(e.dataTransfer.getData("camera"));
+                    attachCamera(slot, cam, true);
+                });
+
+                wall.appendChild(slot);
+            }
+
+            restoreLayout();
+        }
+
+        // ---------------- MOVE / SWAP ----------------
+        function moveOrSwap(i1, i2) {
+            lockTourTemporary();
+            if (i1 === i2) return;
+
+            const slot1 = document.querySelector(`[data-index='${i1}']`);
+            const slot2 = document.querySelector(`[data-index='${i2}']`);
+
+            const video1 = slot1.querySelector("video");
+            const video2 = slot2.querySelector("video");
+            const overlay1 = slot1.querySelector(".overlay");
+            const overlay2 = slot2.querySelector(".overlay");
+            const status1 = slot1.querySelector(".status");
+            const status2 = slot2.querySelector(".status");
+            const path1 = layoutMemory[i1];
+            const path2 = layoutMemory[i2];
+
+            slot1.innerHTML = "";
+            slot2.innerHTML = "";
+
+            if (video1) { slot2.appendChild(video1); if (status1) slot2.appendChild(status1); if (overlay1) slot2.appendChild(overlay1); layoutMemory[i2] = path1; }
+            else { delete layoutMemory[i2]; }
+
+            if (video2) { slot1.appendChild(video2); if (status2) slot1.appendChild(status2); if (overlay2) slot1.appendChild(overlay2); layoutMemory[i1] = path2; }
+            else { delete layoutMemory[i1]; }
+
+            updateCounters();
+            saveLayout();
+        }
+
+        // ---------------- ATTACH CAMERA ----------------
+        async function attachCamera(slot, cam, manual = false) {
+            const usageCount = cameraUsageCount(cam.path);
+            if (manual && usageCount > 0) setTimeout(() => alert("⚠ Esta cámara ya está en el videowall"), 200);
+
+            slot.innerHTML = "";
+            const video = document.createElement("video");
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            slot.appendChild(video);
+
+            const status = document.createElement("div");
+            status.className = "status offline";
+            status.innerText = "Connecting";
+            slot.appendChild(status);
+
+            video.addEventListener("wheel", e => zoomVideo(e, video));
+
+            if (!streams[cam.path]) await createStream(cam);
+
+            video.srcObject = streams[cam.path].media;
+
+            status.className = "status online";
+            status.innerText = "Online";
+
+            layoutMemory[slot.dataset.index] = cam.path;
+            updateCounters();
+            createOverlay(slot, cam);
+            saveLayout();
+
+            slot.draggable = true;
+            slot.addEventListener("dragstart", e => {
+                draggingSlotIndex = slot.dataset.index;
+                e.dataTransfer.setData("slotIndex", slot.dataset.index);
+            });
+        }
+
+        // ---------------- CAMERA UTILS ----------------
+        function cameraUsageCount(path) { return Object.values(layoutMemory).filter(p => p === path).length; }
+
+        function updateCounters() {
+            let online = 0, offline = 0;
+            Object.values(layoutMemory).forEach(path => { if (streams[path]) online++; else offline++; });
+            document.getElementById("camOnline").innerText = online;
+            document.getElementById("camOffline").innerText = offline;
+        }
+
+        // ---------------- STREAM ----------------
+        async function createStream(cam) {
+            if (streams[cam.path]?.pc) {
+                try { streams[cam.path].pc.close() } catch { }
+            }
+
+            const pc = new RTCPeerConnection();
+            pc.addTransceiver("video", { direction: "recvonly" });
+            const media = new MediaStream();
+            pc.ontrack = e => media.addTrack(e.track);
+
+            // --- Detectar pérdida de conexión ---
+            pc.onconnectionstatechange = () => {
+                const state = pc.connectionState;
+
+                document.querySelectorAll(".slot").forEach(slot => {
+                    if (layoutMemory[slot.dataset.index] === cam.path) {
+                        const video = slot.querySelector("video");
+                        const status = slot.querySelector(".status");
+                        let signal = slot.querySelector(".no-signal");
+
+                        if (state === "failed" || state === "disconnected") {
+                            // Mostrar SIN SEÑAL
+                            if (!signal) {
+                                signal = document.createElement("div");
+                                signal.className = "no-signal";
+                                signal.innerText = "SIN SEÑAL";
+                                signal.style.position = "absolute";
+                                signal.style.top = "50%";
+                                signal.style.left = "50%";
+                                signal.style.transform = "translate(-50%, -50%)";
+                                signal.style.color = "red";
+                                signal.style.fontSize = "1.2em";
+                                signal.style.fontWeight = "bold";
+                                slot.appendChild(signal);
+                            }
+                            if (video) video.style.display = "none";
+                            if (status) {
+                                status.innerText = "Conectando...";
+                                status.className = "status offline";
+                            }
+                            scheduleReconnect(cam);
+                        }
+                    }
+                });
+            };
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await waitIce(pc);
+
+            let url = cam.webrtcUrl;
+            if (!url.endsWith("/whep")) url += "/whep";
+
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/sdp" },
+                body: pc.localDescription.sdp
+            });
+
+            const answer = await res.text();
+            await pc.setRemoteDescription({ type: "answer", sdp: answer });
+
+            streams[cam.path] = { pc, media, cam };
+
+            // --- Restaurar video cuando conecta ---
+            document.querySelectorAll(".slot").forEach(slot => {
+                if (layoutMemory[slot.dataset.index] === cam.path) {
+                    const video = slot.querySelector("video");
+                    const status = slot.querySelector(".status");
+                    const signal = slot.querySelector(".no-signal");
+                    if (video) {
+                        video.srcObject = media;
+                        video.style.display = "";
+                    }
+                    if (status) {
+                        status.innerText = "Online";
+                        status.className = "status online";
+                    }
+                    if (signal) slot.removeChild(signal);
+                }
+            });
+        }
+
+
+        function waitIce(pc) { return new Promise(resolve => { if (pc.iceGatheringState === "complete") resolve(); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") resolve(); } }); }
+
+        // ---------------- OVERLAY ----------------
+        function createOverlay(slot, cam) {
+
+            const overlay = document.createElement("div")
+            overlay.className = "overlay"
+
+            overlay.innerHTML = `
+    <span>${cam.name}</span>
+    <div class="overlay-controls">
+
+        <button onclick="snapshot(this.closest('.slot').querySelector('video'))">
+            <i class="bi bi-camera"></i>
+        </button>
+
+        <button onclick="zoomIn(this.closest('.slot').querySelector('video'))">
+            <i class="bi bi-zoom-in"></i>
+        </button>
+
+        <button onclick="zoomOut(this.closest('.slot').querySelector('video'))">
+            <i class="bi bi-zoom-out"></i>
+        </button>
+
+        <button onclick="resetView(this.closest('.slot').querySelector('video'))">
+            <i class="bi bi-crosshair"></i>
+        </button>
+
+        <button onclick="toggleFullscreen(this.closest('.slot'))">
+            <i class="bi bi-arrows-fullscreen"></i>
+        </button>
+
+        ${cam.ptz ? `
+` : `<button onclick="openPTZFullscreen(${JSON.stringify(cam).replace(/"/g, '&quot;')}, this.closest('.slot'))">
+<i class="bi bi-arrows-move"></i>
+</button>`}
+
+        <button onclick="removeCamera(this.closest('.slot'))">
+            <i class="bi bi-x-lg"></i>
+        </button>
+
+    </div>
+`
+
+            slot.appendChild(overlay)
+            enablePan(slot.querySelector("video"))
+        }
+
+        // ---------------- CONTROL / ZOOM / PAN ----------------
+        function zoomIn(video) { pauseTourTemporary(); applyZoom(video, 0.2); }
+        function zoomOut(video) { pauseTourTemporary(); applyZoom(video, -0.2); }
+        function applyZoom(video, delta) {
+            let zoom = zoomLevels.get(video) || 1;
+            let pan = panOffsets.get(video) || { x: 0, y: 0 };
+            zoom += delta; zoom = Math.min(Math.max(1, zoom), 5);
+            video.style.transformOrigin = "50% 50%";
+            video.style.transform = `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`;
+            zoomLevels.set(video, zoom); panOffsets.set(video, pan);
+        }
+        function resetView(video) { zoomLevels.set(video, 1); panOffsets.set(video, { x: 0, y: 0 }); video.style.transform = "scale(1) translate(0px,0px)"; }
+        function enablePan(video) {
+            video.addEventListener("mousedown", e => {
+                if ((zoomLevels.get(video) || 1) <= 1) return;
+                draggingVideo = video; dragStart = { x: e.clientX, y: e.clientY }; panStart = panOffsets.get(video) || { x: 0, y: 0 };
+                video.style.cursor = "grabbing"; pauseTourTemporary();
+                e.preventDefault();
+            });
+        }
+        window.addEventListener("mousemove", e => {
+            if (!draggingVideo) return;
+            const pan = panOffsets.get(draggingVideo) || { x: 0, y: 0 };
+            const zoom = zoomLevels.get(draggingVideo) || 1;
+            const dx = (e.clientX - dragStart.x) / zoom;
+            const dy = (e.clientY - dragStart.y) / zoom;
+            panOffsets.set(draggingVideo, { x: panStart.x + dx, y: panStart.y + dy });
+            draggingVideo.style.transform = `scale(${zoom}) translate(${panStart.x + dx}px, ${panStart.y + dy}px)`;
+        });
+        window.addEventListener("mouseup", e => { if (draggingVideo) { draggingVideo.style.cursor = "grab"; draggingVideo = null; } });
+        function zoomVideo(e, video) { pauseTourTemporary(); e.preventDefault(); let rect = video.getBoundingClientRect(); let offsetX = e.clientX - rect.left; let offsetY = e.clientY - rect.top; let zoom = zoomLevels.get(video) || 1; let pan = panOffsets.get(video) || { x: 0, y: 0 }; zoom += e.deltaY < 0 ? 0.1 : -0.1; zoom = Math.min(Math.max(1, zoom), 5); video.style.transformOrigin = `${(offsetX / rect.width) * 100}% ${(offsetY / rect.height) * 100}%`; video.style.transform = `scale(${zoom}) translate(${pan.x}px,${pan.y}px)`; zoomLevels.set(video, zoom); panOffsets.set(video, pan); }
+        function toggleFullscreen(slot) {
+
+            pauseTourTemporary()
+
+            const wasFull = slot.classList.contains("fullscreen")
+
+            slot.classList.toggle("fullscreen")
+
+            if (wasFull && activePTZ && activePTZ.slot === slot) {
+
+                const overlay = slot.querySelector(".ptz-overlay")
+                if (overlay) overlay.remove()
+
+                if (ptzJoystick) {
+                    ptzJoystick.destroy()
+                    ptzJoystick = null
+                }
+
+                activePTZ = null
+            }
+        }
+        function snapshot(video) { const canvas = document.createElement("canvas"); canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext("2d").drawImage(video, 0, 0); const link = document.createElement("a"); link.href = canvas.toDataURL(); link.download = "snapshot.png"; link.click(); }
+        function removeCamera(slot) { stopTourByUserAction(); const index = slot.dataset.index; slot.innerHTML = ""; delete layoutMemory[index]; updateCounters(); saveLayout(); }
+
+        // ---------------- SAVE / RESTORE ----------------
+        function saveLayout() { localStorage.setItem("videowallLayout", JSON.stringify(layoutMemory)); }
+        function restoreLayout() {
+            const saved = localStorage.getItem("videowallLayout"); if (!saved) return;
+            layoutMemory = JSON.parse(saved);
+            Object.entries(layoutMemory).forEach(([slotIndex, path]) => {
+                const slot = document.querySelector(`[data-index='${slotIndex}']`);
+                const cam = cameras.find(c => c.path === path);
+                if (slot && cam) attachCamera(slot, cam);
+            });
+        }
+
+        // ---------------- CLEAR ----------------
+        function clearLayout() {
+            document.querySelectorAll(".slot").forEach(s => s.innerHTML = ""); // vacía visualmente
+            layoutMemory = {};              // borra la memoria interna
+            zoomLevels.clear();             // resetea zoom
+            panOffsets.clear();             // resetea pan
+            updateCounters();               // actualiza contadores
+            localStorage.removeItem("videowallLayout"); // borra layout guardado
+        }
+
+        // ---------------- SEARCH ----------------
+        document.getElementById("searchCam").addEventListener("input", e => {
+            const value = e.target.value.toLowerCase();
+            document.querySelectorAll(".camera-card").forEach(c => { c.style.display = c.textContent.toLowerCase().includes(value) ? "flex" : "none"; });
+        });
+
+        // ---------------- EVENTS ----------------
+        document.getElementById("layoutSelect").addEventListener("change", e => setLayout(parseInt(e.target.value)));
+        document.getElementById("clearLayout").addEventListener("click", clearLayout);
+
+        // ---------------- INIT ----------------
+        window.onload = async () => {
+            await loadCameras();
+            const savedLayout = localStorage.getItem("layoutType") || 6;
+            document.getElementById("layoutSelect").value = savedLayout;
+            setLayout(savedLayout);
+        };
+
+        // ---------------- TOUR BUTTON ----------------
+        document.getElementById("tourBtn").addEventListener("click", toggleTour);
+        function toggleTour() {
+            tourUserEnabled = !tourUserEnabled;
+            const btn = document.getElementById("tourBtn");
+            if (tourUserEnabled) { btn.classList.remove("btn-success"); btn.classList.add("btn-warning"); startTour(); }
+            else { stopTour(); btn.classList.add("btn-success"); btn.classList.remove("btn-warning"); }
+        }
+
+        function startTour() { if (!tourUserEnabled || tourLocked) return; tourActive = true; tourTimer = setInterval(rotateLayout, 10000); }
+        function stopTour() { clearInterval(tourTimer); tourActive = false; }
+        function rotateLayout() {
+            const slots = [...document.querySelectorAll(".slot")];
+            if (slots.length <= 1) return;
+
+            const last = slots[slots.length - 1]; const videoLast = last.querySelector("video"); const overlayLast = last.querySelector(".overlay"); const statusLast = last.querySelector(".status"); const pathLast = layoutMemory[last.dataset.index];
+
+            for (let i = slots.length - 1; i > 0; i--) {
+                const current = slots[i]; const prev = slots[i - 1];
+                const v = prev.querySelector("video"); const o = prev.querySelector(".overlay"); const s = prev.querySelector(".status"); const path = layoutMemory[prev.dataset.index];
+                current.innerHTML = "";
+                if (v) current.appendChild(v); if (s) current.appendChild(s); if (o) current.appendChild(o);
+                layoutMemory[current.dataset.index] = path;
+            }
+
+            const first = slots[0]; first.innerHTML = "";
+            if (videoLast) first.appendChild(videoLast); if (statusLast) first.appendChild(statusLast); if (overlayLast) first.appendChild(overlayLast);
+            layoutMemory[first.dataset.index] = pathLast;
+
+            saveLayout();
+        }
+
+        // ---------------- TOUR PAUSE / TEMP ----------------
+        function stopTourByUserAction() { if (!tourActive) return; pausedByUser = true; tourActive = false; stopTour(); resetIdleTimer(); document.getElementById("tourBtn").classList.add("btn-success"); document.getElementById("tourBtn").classList.remove("btn-warning"); }
+        function pauseTourTemporary(ms = 30000) { if (!tourActive) return; lockTourTemporary(ms); }
+        function lockTourTemporary(ms = 30000) { if (!tourActive) return; tourLocked = true; stopTour(); setTimeout(() => { tourLocked = false; if (tourUserEnabled && !pausedByUser) startTour(); }, ms); }
+
+        // ---------------- INACTIVITY AUTO-RESUME ----------------
+        function resetIdleTimer() { clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (tourUserEnabled && !tourActive && !pausedByUser && !tourLocked) { startTour(); document.getElementById("tourBtn").classList.replace("btn-success", "btn-warning"); } }, idleTimeout); }
+        ["mousemove", "keydown", "click", "wheel"].forEach(evt => window.addEventListener(evt, () => { pausedByUser = false; resetIdleTimer(); }));
+
+        // ---------------- RECONEXION PERSISTENTE ----------------
+        let reconnectInterval = null;
+        const reconnectQueue = new Set();
+
+        function scheduleReconnect(cam) {
+            reconnectQueue.add(cam.path);
+            if (!reconnectInterval) startReconnectWatcher();
+        }
+
+        function startReconnectWatcher() {
+            reconnectInterval = setInterval(async () => {
+                for (const path of Array.from(reconnectQueue)) {
+                    const cam = cameras.find(c => c.path === path);
+                    if (!cam) {
+                        reconnectQueue.delete(path);
+                        continue;
+                    }
+
+                    try {
+                        console.log("Intentando reconectar:", cam.name);
+                        await createStream(cam);
+
+                        // reasignar el stream a todos los videos que usan esa cámara
+                        document.querySelectorAll(".slot").forEach(slot => {
+                            const index = slot.dataset.index;
+                            if (layoutMemory[index] === path) {
+                                const video = slot.querySelector("video");
+                                if (video) video.srcObject = streams[path].media;
+                            }
+                        });
+
+                        reconnectQueue.delete(path); // conexión exitosa
+                        reconnectAttempts[path] = 0;
+                    } catch (err) {
+                        console.warn("Reconexión fallida para:", cam.name);
+                        reconnectAttempts[path] = (reconnectAttempts[path] || 0) + 1;
+                    }
+                }
+
+                if (reconnectQueue.size === 0) {
+                    clearInterval(reconnectInterval);
+                    reconnectInterval = null;
+                }
+            }, 5000); // revisar cada 5 segundos
+        }
+
+
+        //------------------- JOYSTICK  ---------------------//
+        let activePTZ = null
+        let ptzJoystick = null
+
+        function openPTZFullscreen(cam, slot) {
+
+            pauseTourTemporary(60000)
+
+            slot.classList.add("fullscreen")
+            activePTZ = { cam, slot }
+
+            const overlay = document.createElement("div")
+            overlay.className = "ptz-overlay"
+
+            overlay.innerHTML = `
+        <div class="ptz-joystick" id="ptzJoy"></div>
+        
+    `
+
+            slot.appendChild(overlay)
+
+            initPTZJoystick(cam)
+        }
+
+        function initPTZJoystick(cam) {
+
+            const zone = document.getElementById("ptzJoy")
+
+            ptzJoystick = nipplejs.create({
+                zone: zone,
+                mode: "static",
+                position: { left: "50%", top: "50%" },
+                size: 140,
+                color: "white"
+            })
+
+            ptzJoystick.on("move", (e, data) => {
+                if (!data) return
+
+                const pan = data.vector.x
+                const tilt = -data.vector.y
+
+                sendPTZ(cam, pan, tilt)
+            })
+
+            ptzJoystick.on("end", () => {
+                sendPTZ(cam, 0, 0)
+            })
+        }
+
+        function ptzZoom(delta) {
+
+            if (!activePTZ) return
+
+            fetch(`http://localhost:3000/api/cameras/${activePTZ.cam.id}/zoom`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ delta })
+            })
+        }
+
+        // ---------------- PTZ CONTROL ----------------
+
+        function sendPTZ(cam, pan, tilt) {
+
+            // valores -1 a 1
+            const speed = Math.min(Math.sqrt(pan * pan + tilt * tilt), 1)
+
+            fetch(`http://localhost:3000/api/cameras/${cam.id}/ptz`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    pan,
+                    tilt,
+                    speed
+                })
+            }).catch(err => {
+                console.warn("PTZ error", err)
+            })
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+</body>
+
+</html>
