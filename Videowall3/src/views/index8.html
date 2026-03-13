@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>NVR Videowall</title>
+    <title>NVR Videowall 8</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -90,6 +90,10 @@
             overflow: hidden;
             position: relative;
             border: 1px solid #1f2937;
+        }
+
+        .slot video {
+            transition: transform .25s ease, opacity .25s ease;
         }
 
         /* OVERLAY */
@@ -184,6 +188,9 @@
                         <option value="25">5x5</option>
 
                     </select>
+                    <button id="tourBtn" class="btn btn-sm btn-success">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
 
                     <button class="btn btn-sm btn-danger" id="clearLayout">
                         <i class="bi bi-trash"></i>
@@ -224,8 +231,14 @@
         let draggingVideo = null;
         let dragStart = { x: 0, y: 0 };
         let panStart = { x: 0, y: 0 };
-        let onlineCount = 0
-        let offlineCount = 0
+        let onlineCount = 0;
+        let offlineCount = 0;
+        let draggingSlotIndex = null;
+        let reconnectTimers = {};
+        let reconnectAttempts = {};
+        let tourActive = false;
+        let tourTimer = null;
+        let tourIndex = 0;
 
         // ---------------- LOAD CAMERAS ----------------
         async function loadCameras() {
@@ -277,11 +290,14 @@
 
                     const slotFrom = e.dataTransfer.getData("slotIndex")
 
+                    // ===== SWAP / MOVE =====
                     if (slotFrom !== "") {
-                        swapSlots(slotFrom, slot.dataset.index)
+                        moveOrSwap(slotFrom, slot.dataset.index)
+                        draggingSlotIndex = null
                         return
                     }
 
+                    // ===== DRAG DESDE SIDEBAR =====
                     const cam = JSON.parse(e.dataTransfer.getData("camera"))
                     attachCamera(slot, cam, true)
                 })
@@ -290,6 +306,56 @@
             }
 
             restoreLayout()
+        }
+
+        function moveOrSwap(i1, i2) {
+
+
+            if (i1 === i2) return
+
+            const slot1 = document.querySelector(`[data-index='${i1}']`)
+            const slot2 = document.querySelector(`[data-index='${i2}']`)
+
+            const video1 = slot1.querySelector("video")
+            const video2 = slot2.querySelector("video")
+
+            const overlay1 = slot1.querySelector(".overlay")
+            const overlay2 = slot2.querySelector(".overlay")
+
+            const status1 = slot1.querySelector(".status")
+            const status2 = slot2.querySelector(".status")
+
+            const path1 = layoutMemory[i1]
+            const path2 = layoutMemory[i2]
+
+            // limpiar slots
+            slot1.innerHTML = ""
+            slot2.innerHTML = ""
+
+            // mover video1 → slot2
+            if (video1) {
+                slot2.appendChild(video1)
+                if (status1) slot2.appendChild(status1)
+                if (overlay1) slot2.appendChild(overlay1)
+
+                layoutMemory[i2] = path1
+            } else {
+                delete layoutMemory[i2]
+            }
+
+            // mover video2 → slot1
+            if (video2) {
+                slot1.appendChild(video2)
+                if (status2) slot1.appendChild(status2)
+                if (overlay2) slot1.appendChild(overlay2)
+
+                layoutMemory[i1] = path2
+            } else {
+                delete layoutMemory[i1]
+            }
+
+            updateCounters()
+            saveLayout()
         }
 
         function swapSlots(i1, i2) {
@@ -353,9 +419,10 @@
             saveLayout()
 
             slot.draggable = true
-            slot.addEventListener("dragstart", e => {
-                e.dataTransfer.setData("slotIndex", slot.dataset.index)
 
+            slot.addEventListener("dragstart", e => {
+                draggingSlotIndex = slot.dataset.index
+                e.dataTransfer.setData("slotIndex", slot.dataset.index)
             })
         }
 
@@ -377,23 +444,77 @@
 
         // ---------------- STREAM ----------------
         async function createStream(cam) {
+
+            if (streams[cam.path]?.pc) {
+                try { streams[cam.path].pc.close() } catch { }
+            }
+
             const pc = new RTCPeerConnection()
             pc.addTransceiver("video", { direction: "recvonly" })
+
             const media = new MediaStream()
             pc.ontrack = e => media.addTrack(e.track)
+
+            pc.onconnectionstatechange = () => {
+
+                const state = pc.connectionState
+
+                if (state === "failed" || state === "disconnected") {
+
+                    console.log("RECONNECT", cam.name)
+                    smartReconnect(cam)
+                }
+            }
+
             const offer = await pc.createOffer()
             await pc.setLocalDescription(offer)
             await waitIce(pc)
+
             let url = cam.webrtcUrl
             if (!url.endsWith("/whep")) url += "/whep"
+
             const res = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/sdp" },
                 body: pc.localDescription.sdp
             })
+
             const answer = await res.text()
             await pc.setRemoteDescription({ type: "answer", sdp: answer })
+
             streams[cam.path] = { pc, media, cam }
+        }
+
+        function smartReconnect(cam) {
+
+            const path = cam.path
+
+            reconnectAttempts[path] = (reconnectAttempts[path] || 0) + 1
+
+            const delay = Math.min(10000, reconnectAttempts[path] * 1500)
+
+            clearTimeout(reconnectTimers[path])
+
+            reconnectTimers[path] = setTimeout(async () => {
+
+                console.log("Trying reconnect", cam.name)
+
+                await createStream(cam)
+
+                // reasignar stream a todos los videos que usan esa cam
+                document.querySelectorAll(".slot").forEach(slot => {
+
+                    const index = slot.dataset.index
+                    if (layoutMemory[index] === path) {
+
+                        const video = slot.querySelector("video")
+                        if (video) {
+                            video.srcObject = streams[path].media
+                        }
+                    }
+                })
+
+            }, delay)
         }
 
         function waitIce(pc) {
@@ -616,6 +737,82 @@
             setLayout(savedLayout)
         }
 
+        // ---------------  VIDEO RONDA -----------------
+        document.getElementById("tourBtn").addEventListener("click", toggleTour);
+        function toggleTour() {
+
+            tourActive = !tourActive
+
+            const btn = document.getElementById("tourBtn")
+
+            if (tourActive) {
+                btn.classList.remove("btn-success")
+                btn.classList.add("btn-warning")
+                startTour()
+            } else {
+                btn.classList.add("btn-success")
+                btn.classList.remove("btn-warning")
+                stopTour()
+            }
+        }
+
+        function startTour() {
+
+            tourTimer = setInterval(() => {
+
+                rotateLayout()
+
+            }, 10000)
+        }
+
+        function stopTour() {
+            clearInterval(tourTimer)
+        }
+
+        function rotateLayout() {
+
+            const slots = [...document.querySelectorAll(".slot")]
+
+            if (slots.length <= 1) return
+
+            const last = slots[slots.length - 1]
+
+            const videoLast = last.querySelector("video")
+            const overlayLast = last.querySelector(".overlay")
+            const statusLast = last.querySelector(".status")
+            const pathLast = layoutMemory[last.dataset.index]
+
+            for (let i = slots.length - 1; i > 0; i--) {
+
+                const current = slots[i]
+                const prev = slots[i - 1]
+
+                const v = prev.querySelector("video")
+                const o = prev.querySelector(".overlay")
+                const s = prev.querySelector(".status")
+                const path = layoutMemory[prev.dataset.index]
+
+                current.innerHTML = ""
+
+                if (v) current.appendChild(v)
+                if (s) current.appendChild(s)
+                if (o) current.appendChild(o)
+
+                layoutMemory[current.dataset.index] = path
+            }
+
+            // slot1 recibe última
+            const first = slots[0]
+            first.innerHTML = ""
+
+            if (videoLast) first.appendChild(videoLast)
+            if (statusLast) first.appendChild(statusLast)
+            if (overlayLast) first.appendChild(overlayLast)
+
+            layoutMemory[first.dataset.index] = pathLast
+
+            saveLayout()
+        }
 
     </script>
 
